@@ -102,7 +102,7 @@ def create_booking():
         logger.info('Raw request data: %s', raw_data)
         
         # Try to parse JSON
-        data = request.get_json()
+        data = request.json
         logger.info('Parsed JSON data: %s', data)
         
         if not data:
@@ -232,10 +232,18 @@ def create_booking():
             
             logger.info('Booking created successfully - ID: %s', booking.booking_id)
             
+            # Return response with all necessary information for email
             return jsonify({
                 'success': True,
                 'booking_id': booking.booking_id,
-                'amount': total_amount
+                'amount': total_amount,
+                'email': data['email'],
+                'date': data['date'],
+                'timeSlot': data['timeSlot'],
+                'adults': adults,
+                'children': children,
+                'nationality': data['nationality'],
+                'ticketType': data['ticketType']
             })
             
         except Exception as e:
@@ -320,37 +328,8 @@ def init_db():
             raise
 
 def send_booking_confirmation(booking):
-    try:
-        msg = Message(
-            'Museum Visit Booking Confirmation',
-            recipients=[booking.email]
-        )
-        msg.body = f'''
-Dear Visitor,
-
-Your museum visit booking has been confirmed!
-
-Booking Details:
----------------
-Booking ID: {booking.booking_id}
-Date: {booking.date.strftime('%Y-%m-%d')}
-Time Slot: {booking.time_slot}
-Number of Adults: {booking.adults}
-Number of Children: {booking.children}
-Total Amount: ${booking.total_amount}
-
-Please keep this email for your records. You will need to show this booking ID when you arrive at the museum.
-
-Thank you for choosing to visit our museum!
-
-Best regards,
-Museum Team
-'''
-        mail.send(msg)
-        return True
-    except Exception as e:
-        print(f"Error sending email: {str(e)}")
-        return False
+    # Email sending is now handled by the gateway
+    return True
 
 # Serve main HTML file
 @app.route('/')

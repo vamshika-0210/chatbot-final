@@ -1083,7 +1083,7 @@ async function createBooking(bookingData) {
             date: bookingData.date,
             nationality: bookingData.nationality,
             adults: parseInt(bookingData.adults) || 0,
-            children: parseInt(bookingData.children || 0),  // Ensure children defaults to 0
+            children: parseInt(bookingData.children || 0),
             ticketType: bookingData.ticketType,
             timeSlot: bookingData.timeSlot,
             email: bookingData.email,
@@ -1099,6 +1099,8 @@ async function createBooking(bookingData) {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
+            credentials: 'include',
+            mode: 'cors',
             body: JSON.stringify(processedBookingData)
         });
 
@@ -1112,6 +1114,44 @@ async function createBooking(bookingData) {
             console.error('Booking creation failed:', data.error);
             addMessage(`Booking failed: ${data.error}`, 'bot');
             throw new Error(data.error || 'Failed to create booking');
+        }
+
+        // Send confirmation email
+        console.log('Sending confirmation email...');
+        const emailData = {
+            to_email: processedBookingData.email,
+            booking_id: data.booking_id,
+            booking_details: {
+                date: processedBookingData.date,
+                timeSlot: processedBookingData.timeSlot,
+                adults: processedBookingData.adults,
+                children: processedBookingData.children,
+                amount: data.amount || processedBookingData.amount
+            }
+        };
+
+        console.log('Email request data:', emailData);
+        const emailResponse = await fetch(`${GATEWAY_URL}/api/email/send`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            credentials: 'include',
+            mode: 'cors',
+            body: JSON.stringify(emailData)
+        });
+
+        console.log('Email response status:', emailResponse.status);
+        if (!emailResponse.ok) {
+            const errorText = await emailResponse.text();
+            console.warn('Email sending failed:', errorText);
+            // Don't fail the booking if email fails
+            data.email_status = 'failed';
+        } else {
+            const emailResult = await emailResponse.json();
+            console.log('Email response:', emailResult);
+            data.email_status = 'sent';
         }
 
         return data;

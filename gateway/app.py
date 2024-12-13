@@ -10,6 +10,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import traceback
+import time
 
 # Add these utility functions after your imports
 
@@ -49,19 +50,28 @@ SMTP_USERNAME = os.getenv('SMTP_USERNAME')
 SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
 SENDER_EMAIL = os.getenv('SENDER_EMAIL')
 
+# Get URLs from environment
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5003')
+BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:5002')
+GATEWAY_PORT = int(os.getenv('GATEWAY_PORT', 5001))
+
 # Configure CORS properly
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["http://localhost:5000", "http://127.0.0.1:5000"],
+        "origins": [
+            "http://localhost:5003",
+            "http://127.0.0.1:5003",
+            FRONTEND_URL
+        ],
         "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"]
+        "allow_headers": ["Content-Type", "Authorization", "Accept"],
+        "supports_credentials": True,
+        "expose_headers": ["Content-Type", "Authorization"]
     }
 })
 
 # Configuration from environment
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'your-jwt-secret-key')
-BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:5002')
-GATEWAY_PORT = int(os.getenv('GATEWAY_PORT', 5001))
 
 # Initialize extensions
 jwt = JWTManager(app)
@@ -259,38 +269,44 @@ def send_email():
         print("\n=== Email Request Started ===")
         print("Gateway: Received email request")
         print("Request Headers:", dict(request.headers))
+        print("Raw request data:", request.get_data())
         
         # Check if we have JSON data
         if not request.is_json:
             error_msg = "No JSON data received"
             print(f"Error: {error_msg}")
-            print("Request data:", request.get_data())
             return jsonify({'error': error_msg}), 400
             
         data = request.json
-        print("\nRaw request data:", data)
+        print("\nParsed JSON data:", data)
         
         to_email = data.get('to_email')
         booking_id = data.get('booking_id')
         booking_details = data.get('booking_details', {})
 
-        print(f"\nParsed data:")
+        print(f"\nExtracted data:")
         print(f"- To Email: {to_email}")
         print(f"- Booking ID: {booking_id}")
-        print(f"- Booking Details: {booking_details}")
+        print(f"- Booking Details:", booking_details)
 
-        # Validate required fields
-        if not all([to_email, booking_id, booking_details]):
-            missing = []
-            if not to_email: missing.append('to_email')
-            if not booking_id: missing.append('booking_id')
-            if not booking_details: missing.append('booking_details')
+        # Validate required fields with detailed logging
+        missing = []
+        if not to_email: 
+            missing.append('to_email')
+            print("Missing to_email")
+        if not booking_id: 
+            missing.append('booking_id')
+            print("Missing booking_id")
+        if not booking_details: 
+            missing.append('booking_details')
+            print("Missing booking_details")
+        if missing:
             error_msg = f'Missing required fields: {", ".join(missing)}'
-            print(f"Error: {error_msg}")
+            print(f"Validation Error: {error_msg}")
             return jsonify({'error': error_msg}), 400
 
         # Validate email configuration
-        print("\nValidating SMTP Configuration:")
+        print("\nSMTP Configuration:")
         print(f"- Server: {SMTP_SERVER}")
         print(f"- Port: {SMTP_PORT}")
         print(f"- Username: {SMTP_USERNAME}")
@@ -306,18 +322,19 @@ def send_email():
         
         if missing_config:
             error_msg = f"Missing SMTP configuration: {', '.join(missing_config)}"
-            print(f"Error: {error_msg}")
+            print(f"Configuration Error: {error_msg}")
             return jsonify({'error': error_msg}), 500
 
         # Create email message
-        print("\nCreating email message...")
-        msg = MIMEMultipart()
-        msg['From'] = SENDER_EMAIL
-        msg['To'] = to_email
-        msg['Subject'] = 'Museum Booking Confirmation'
+        try:
+            print("\nCreating email message...")
+            msg = MIMEMultipart()
+            msg['From'] = SENDER_EMAIL
+            msg['To'] = to_email
+            msg['Subject'] = 'Museum Booking Confirmation'
 
-        # Create email body
-        body = f"""
+            # Create email body
+            body = f"""
 Dear Visitor,
 
 Thank you for booking with us! Your booking has been confirmed.
@@ -338,59 +355,78 @@ We look forward to your visit!
 Best regards,
 Museum Management Team
 """
-        print("\nEmail Content:")
-        print("- From:", SENDER_EMAIL)
-        print("- To:", to_email)
-        print("- Subject: Museum Booking Confirmation")
-        print("- Body Preview:", body[:100] + "...")
+            print("\nEmail Content Preview:")
+            print("- From:", SENDER_EMAIL)
+            print("- To:", to_email)
+            print("- Subject: Museum Booking Confirmation")
+            print("- Body Preview:", body[:100] + "...")
 
-        msg.attach(MIMEText(body, 'plain'))
+            msg.attach(MIMEText(body, 'plain'))
 
-        try:
-            print("\n=== SMTP Connection Started ===")
-            print("1. Creating SMTP connection...")
-            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-            server.set_debuglevel(2)  # Increase debug level
-            
-            print("\n2. Starting TLS...")
-            server.starttls()
-            
-            print("\n3. Attempting login...")
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
-            
-            print("\n4. Sending email...")
-            server.send_message(msg)
-            
-            print("\n5. Closing SMTP connection...")
-            server.quit()
-            
-            print("\nEmail sent successfully!")
-            print("=== Email Request Completed ===\n")
-            return jsonify({'message': 'Email sent successfully'}), 200
-            
-        except smtplib.SMTPAuthenticationError as auth_error:
-            error_msg = f"SMTP Authentication failed: {str(auth_error)}"
-            print(f"\nError: {error_msg}")
-            print("Full error details:", auth_error)
-            print(traceback.format_exc())
-            return jsonify({'error': error_msg}), 500
-        except smtplib.SMTPException as smtp_error:
-            error_msg = f"SMTP error: {str(smtp_error)}"
-            print(f"\nError: {error_msg}")
-            print("Full error details:", smtp_error)
-            print(traceback.format_exc())
-            return jsonify({'error': error_msg}), 500
         except Exception as e:
-            error_msg = f"Failed to send email: {str(e)}"
-            print(f"\nError: {error_msg}")
-            print("Full error details:", e)
+            error_msg = f"Error creating email message: {str(e)}"
+            print(f"Message Creation Error: {error_msg}")
             print(traceback.format_exc())
             return jsonify({'error': error_msg}), 500
+
+        # Send email with retries
+        max_retries = 3
+        retry_count = 0
+        last_error = None
+
+        while retry_count < max_retries:
+            try:
+                print(f"\n=== SMTP Connection Attempt {retry_count + 1}/{max_retries} ===")
+                
+                print("1. Creating SMTP connection...")
+                server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+                server.set_debuglevel(2)  # Enable debug output
+                
+                print("\n2. Starting TLS...")
+                server.starttls()
+                
+                print("\n3. Attempting login...")
+                server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                
+                print("\n4. Sending email...")
+                server.send_message(msg)
+                
+                print("\n5. Closing SMTP connection...")
+                server.quit()
+                
+                print("\nEmail sent successfully!")
+                return jsonify({'message': 'Email sent successfully', 'to': to_email}), 200
+                
+            except smtplib.SMTPAuthenticationError as auth_error:
+                error_msg = f"SMTP Authentication failed: {str(auth_error)}"
+                print(f"Authentication Error: {error_msg}")
+                print(traceback.format_exc())
+                return jsonify({'error': error_msg}), 500
+                
+            except (smtplib.SMTPException, ConnectionError) as smtp_error:
+                last_error = smtp_error
+                retry_count += 1
+                print(f"SMTP Error on attempt {retry_count}: {str(smtp_error)}")
+                if retry_count < max_retries:
+                    wait_time = retry_count * 2
+                    print(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                continue
+                
+            except Exception as e:
+                error_msg = f"Unexpected error sending email: {str(e)}"
+                print(f"Unexpected Error: {error_msg}")
+                print(traceback.format_exc())
+                return jsonify({'error': error_msg}), 500
+
+        # If we've exhausted all retries
+        error_msg = f"Failed to send email after {max_retries} attempts. Last error: {str(last_error)}"
+        print(f"Final Error: {error_msg}")
+        return jsonify({'error': error_msg}), 500
 
     except Exception as e:
         error_msg = f"Email processing error: {str(e)}"
-        print(f"\nError: {error_msg}")
-        print("Full error details:", e)
+        print(f"Processing Error: {error_msg}")
         print(traceback.format_exc())
         return jsonify({'error': error_msg}), 500
 
@@ -408,15 +444,18 @@ def create_session():
 @app.after_request
 def after_request(response):
     # Allow specific origins
-    allowed_origins = ["http://localhost:5000", "http://127.0.0.1:5000"]
+    allowed_origins = [
+        "http://localhost:5003",
+        "http://127.0.0.1:5003",
+        FRONTEND_URL
+    ]
     origin = request.headers.get('Origin')
     if origin in allowed_origins:
         response.headers.add('Access-Control-Allow-Origin', origin)
-        
-    # Allow specific headers and methods
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,Accept')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        response.headers.add('Access-Control-Expose-Headers', 'Content-Type,Authorization')
     return response
 
 # Add this test endpoint

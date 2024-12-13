@@ -14,7 +14,7 @@ socketio = SocketIO(app)
 
 # Service URLs from environment
 GATEWAY_URL = os.getenv('GATEWAY_URL', 'http://localhost:5001')
-FRONTEND_PORT = int(os.getenv('FRONTEND_PORT', 5000))
+FRONTEND_PORT = int(os.getenv('FRONTEND_PORT', 5003))
 
 @app.route('/')
 def index():
@@ -51,75 +51,91 @@ def handle_message(data):
 
 @app.route('/api/booking/create', methods=['POST'])
 def create_booking():
+    print("\n")
+    print("="*50)
+    print("BOOKING CREATION STARTED")
+    print("="*50)
+    print("\nRequest Data:", request.get_data())
+    print("Request JSON:", request.get_json())
+    
     try:
-        print("\n=== Booking Creation Started ===")
-        print("Frontend: Received booking data:", request.json)
+        # Validate request data
+        if not request.is_json:
+            print("ERROR: No JSON data received")
+            return jsonify({'error': 'No JSON data received'}), 400
+            
+        booking_data = request.get_json()
+        if not booking_data:
+            print("ERROR: Empty JSON data")
+            return jsonify({'error': 'Empty booking data'}), 400
+            
+        required_fields = ['email', 'date', 'timeSlot', 'adults']
+        missing_fields = [field for field in required_fields if field not in booking_data]
+        if missing_fields:
+            print(f"ERROR: Missing required fields: {missing_fields}")
+            return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
+            
+        print("\nValidated booking data:", booking_data)
         
         # Send booking request to gateway
         gateway_url = f"{GATEWAY_URL}/api/bookings/create"
-        print(f"Frontend: Sending booking request to {gateway_url}")
+        print(f"\nSending booking request to gateway: {gateway_url}")
+        print("Request data:", booking_data)
         
         response = requests.post(
             gateway_url,
-            json=request.json,
+            json=booking_data,
             headers={'Content-Type': 'application/json'}
         )
         
-        print(f"Frontend: Booking response status: {response.status_code}")
-        print(f"Frontend: Booking response data: {response.text}")
+        print("\nGateway Response:")
+        print(f"Status Code: {response.status_code}")
+        print(f"Response Headers: {dict(response.headers)}")
+        print(f"Response Body: {response.text}")
         
         if not response.ok:
-            print(f"Frontend: Gateway error - {response.status_code}")
-            error_data = response.json()
-            return jsonify(error_data), response.status_code
+            print("ERROR: Gateway returned error response")
+            return jsonify(response.json()), response.status_code
             
-        # Get the response data
-        booking_data = response.json()
-        print("Frontend: Booking created successfully:", booking_data)
-        
-        # Extract booking ID from response
-        booking_id = None
-        if isinstance(booking_data, dict):
-            booking_id = booking_data.get('booking_id') or booking_data.get('id')
-            if not booking_id and 'success' in booking_data:
-                # Try to find id in nested data
-                for key, value in booking_data.items():
-                    if isinstance(value, dict) and ('id' in value or 'booking_id' in value):
-                        booking_id = value.get('id') or value.get('booking_id')
-                        break
-        
-        print(f"Extracted booking ID: {booking_id}")
-        if not booking_id:
-            print("WARNING: Could not extract booking ID from response:", booking_data)
-            booking_id = "UNKNOWN"
-        
-        # Prepare email data
+        # Process gateway response
         try:
-            print("\n=== Email Sending Started ===")
-            email_data = {
-                'to_email': request.json.get('email'),
-                'booking_id': booking_id,
-                'booking_details': {
-                    'date': request.json.get('date'),
-                    'timeSlot': request.json.get('timeSlot'),
-                    'adults': int(request.json.get('adults', 0)),
-                    'children': int(request.json.get('children', 0)),
-                    'amount': float(booking_data.get('amount', 0)),
-                    'email': request.json.get('email')
-                }
+            gateway_response = response.json()
+        except ValueError as e:
+            print("ERROR: Invalid JSON response from gateway")
+            return jsonify({'error': 'Invalid response from gateway'}), 500
+            
+        booking_id = gateway_response.get('booking_id')
+        if not booking_id:
+            print("ERROR: No booking ID in gateway response")
+            print("Gateway response:", gateway_response)
+            return jsonify({'error': 'No booking ID received'}), 500
+            
+        print("\nBooking created successfully")
+        print("Booking ID:", booking_id)
+        
+        # Send confirmation email
+        print("\n")
+        print("="*50)
+        print("SENDING CONFIRMATION EMAIL")
+        print("="*50)
+        
+        email_data = {
+            'to_email': booking_data['email'],
+            'booking_id': booking_id,
+            'booking_details': {
+                'date': booking_data['date'],
+                'timeSlot': booking_data['timeSlot'],
+                'adults': int(booking_data.get('adults', 0)),
+                'children': int(booking_data.get('children', 0)),
+                'amount': float(gateway_response.get('amount', 0))
             }
-            print("Email data prepared:", email_data)
-            
-            # Validate email data
-            if not email_data['to_email']:
-                print("Frontend: Missing email address!")
-                return jsonify({'error': 'Email address is required'}), 400
-            
-            # Send email request to gateway
+        }
+        
+        print("\nEmail request data:", email_data)
+        
+        try:
             email_url = f"{GATEWAY_URL}/api/email/send"
-            print(f"\nSending email request to {email_url}")
-            print(f"Email request headers: {{'Content-Type': 'application/json'}}")
-            print(f"Email request data: {email_data}")
+            print(f"\nSending email request to: {email_url}")
             
             email_response = requests.post(
                 email_url,
@@ -127,41 +143,37 @@ def create_booking():
                 headers={'Content-Type': 'application/json'}
             )
             
-            print(f"\nEmail Response:")
+            print("\nEmail Response:")
             print(f"Status Code: {email_response.status_code}")
             print(f"Response Headers: {dict(email_response.headers)}")
-            print(f"Response Text: {email_response.text}")
-            
-            try:
-                email_response_data = email_response.json()
-                print(f"Response JSON: {email_response_data}")
-            except:
-                print("Could not parse email response as JSON")
+            print(f"Response Body: {email_response.text}")
             
             if not email_response.ok:
-                print(f"Frontend: Email sending failed - Status: {email_response.status_code}")
-                print(f"Frontend: Email error response:", email_response.text)
+                print("WARNING: Failed to send email")
+                gateway_response['email_status'] = 'failed'
             else:
-                print("Frontend: Email sent successfully")
+                print("Email sent successfully")
+                gateway_response['email_status'] = 'sent'
                 
-        except Exception as email_error:
-            print("\n=== Email Error Details ===")
-            print(f"Error Type: {type(email_error).__name__}")
-            print(f"Error Message: {str(email_error)}")
-            print("Traceback:")
-            print(traceback.format_exc())
-            # Don't fail the booking if email fails
+        except Exception as e:
+            print("\nERROR: Exception while sending email:")
+            print(f"Error Type: {type(e).__name__}")
+            print(f"Error Message: {str(e)}")
+            gateway_response['email_status'] = 'failed'
             
-        print("=== Booking Creation Completed ===\n")
-        return jsonify(booking_data), response.status_code
+        print("\n")
+        print("="*50)
+        print("BOOKING CREATION COMPLETED")
+        print("="*50)
+        return jsonify(gateway_response), 200
         
-    except requests.RequestException as e:
-        print(f"Frontend: Request exception - {str(e)}")
-        return jsonify({'error': 'Gateway service unavailable', 'message': str(e)}), 503
     except Exception as e:
-        print(f"Frontend: Unexpected error - {str(e)}")
-        print(f"Frontend: Error traceback:", traceback.format_exc())
-        return jsonify({'error': 'Internal server error', 'message': str(e)}), 500
+        print("\nERROR: Unexpected exception:")
+        print(f"Error Type: {type(e).__name__}")
+        print(f"Error Message: {str(e)}")
+        print("Traceback:")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/booking/<booking_id>', methods=['GET'])
 def get_booking(booking_id):
@@ -187,5 +199,13 @@ def get_calendar(year, month):
         print(f"Frontend: Request exception - {str(e)}")  # Debug log
         return jsonify({'error': 'Gateway service unavailable'}), 503
 
+@app.route('/test', methods=['GET'])
+def test_endpoint():
+    print("TEST ENDPOINT CALLED")
+    return jsonify({"status": "ok"})
+
 if __name__ == '__main__':
+    print("=== Frontend Server Starting ===")
+    print(f"Frontend URL: http://localhost:{FRONTEND_PORT}")
+    print(f"Gateway URL: {GATEWAY_URL}")
     socketio.run(app, port=FRONTEND_PORT, debug=True)
