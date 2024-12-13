@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import traceback
 
 # Add these utility functions after your imports
 
@@ -99,36 +100,37 @@ def check_availability(date):
 @app.route('/api/bookings/create', methods=['POST'])
 def create_booking():
     try:
-        print("Gateway: Processing booking request")  # Debug log
+        print("\n=== Gateway: Booking Creation Started ===")
+        print("Gateway: Received booking data:", request.json)
         
         # Validate input data
         data = request.json
         if not data:
-            print("Gateway: No data provided")  # Debug log
+            print("Gateway: No data provided")
             return jsonify({'error': 'No data provided'}), 400
             
         # Validate required fields
-        required_fields = ['date', 'nationality', 'adults', 'children', 'ticketType', 'timeSlot', 'email']
+        required_fields = ['date', 'nationality', 'adults', 'ticketType', 'timeSlot', 'email']
         missing_fields = [field for field in required_fields if field not in data or data[field] is None or data[field] == '']
-
-        if 'children' not in data:
-            data['children']=0
-            
+        
         if missing_fields:
-            print(f"Gateway: Missing fields - {missing_fields}")  # Debug log
-            return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
+            error_msg = f'Missing required fields: {", ".join(missing_fields)}'
+            print(f"Gateway: {error_msg}")
+            return jsonify({'error': error_msg}), 400
             
-        # Forward request to backend with timeout
+        # Forward request to backend
         try:
-            print("Gateway: Sending request to backend")  # Debug log
+            print("Gateway: Forwarding request to backend")
             response = requests.post(
                 f"{BACKEND_URL}/api/bookings/create",
                 json=data,
                 headers={'Content-Type': 'application/json'},
-                timeout=15  # Longer timeout for booking creation
+                timeout=15
             )
             
-            # Handle non-200 responses
+            print(f"Gateway: Backend response status: {response.status_code}")
+            print(f"Gateway: Backend response: {response.text}")
+            
             if not response.ok:
                 error_msg = 'Booking creation failed'
                 try:
@@ -137,34 +139,35 @@ def create_booking():
                         error_msg = error_data['error']
                 except:
                     pass
-                print(f"Gateway: Backend error - {error_msg}")  # Debug log
+                print(f"Gateway: Backend error - {error_msg}")
                 return jsonify({'error': error_msg}), response.status_code
             
             # Process successful response
             try:
                 booking_data = response.json()
                 
-                # Validate booking response
-                if 'success' not in booking_data:
-                    print("Gateway: Invalid booking response format")  # Debug log
-                    return jsonify({'error': 'Invalid booking response format'}), 500
+                # Ensure booking_id is present
+                if 'success' in booking_data and booking_data['success']:
+                    if 'booking_id' not in booking_data:
+                        booking_data['booking_id'] = booking_data.get('id')
                     
-                print("Gateway: Booking created successfully")  # Debug log
+                print("Gateway: Booking created successfully:", booking_data)
                 return jsonify(booking_data), 200
                 
             except ValueError as e:
-                print(f"Gateway: JSON parsing error - {str(e)}")  # Debug log
+                print(f"Gateway: JSON parsing error - {str(e)}")
                 return jsonify({'error': 'Invalid JSON response from backend'}), 500
                 
         except requests.Timeout:
-            print("Gateway: Backend request timeout")  # Debug log
+            print("Gateway: Backend request timeout")
             return jsonify({'error': 'Backend service timeout'}), 504
         except requests.RequestException as e:
-            print(f"Gateway: Request error - {str(e)}")  # Debug log
+            print(f"Gateway: Request error - {str(e)}")
             return jsonify({'error': f'Backend service unavailable: {str(e)}'}), 503
             
     except Exception as e:
-        print(f"Gateway: Unexpected error - {str(e)}")  # Debug log
+        print(f"Gateway: Unexpected error - {str(e)}")
+        print(traceback.format_exc())
         return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
 
 @app.route('/api/bookings/<booking_id>', methods=['GET'])
@@ -253,19 +256,61 @@ def get_payment_status(payment_id):
 @app.route('/api/email/send', methods=['POST'])
 def send_email():
     try:
-        print("Gateway: Received email request")  # Debug log
+        print("\n=== Email Request Started ===")
+        print("Gateway: Received email request")
+        print("Request Headers:", dict(request.headers))
+        
+        # Check if we have JSON data
+        if not request.is_json:
+            error_msg = "No JSON data received"
+            print(f"Error: {error_msg}")
+            print("Request data:", request.get_data())
+            return jsonify({'error': error_msg}), 400
+            
         data = request.json
+        print("\nRaw request data:", data)
+        
         to_email = data.get('to_email')
         booking_id = data.get('booking_id')
         booking_details = data.get('booking_details', {})
 
-        print(f"Gateway: Email data - To: {to_email}, Booking ID: {booking_id}")  # Debug log
+        print(f"\nParsed data:")
+        print(f"- To Email: {to_email}")
+        print(f"- Booking ID: {booking_id}")
+        print(f"- Booking Details: {booking_details}")
 
+        # Validate required fields
         if not all([to_email, booking_id, booking_details]):
-            print("Gateway: Missing required email fields")  # Debug log
-            return jsonify({'error': 'Missing required fields'}), 400
+            missing = []
+            if not to_email: missing.append('to_email')
+            if not booking_id: missing.append('booking_id')
+            if not booking_details: missing.append('booking_details')
+            error_msg = f'Missing required fields: {", ".join(missing)}'
+            print(f"Error: {error_msg}")
+            return jsonify({'error': error_msg}), 400
+
+        # Validate email configuration
+        print("\nValidating SMTP Configuration:")
+        print(f"- Server: {SMTP_SERVER}")
+        print(f"- Port: {SMTP_PORT}")
+        print(f"- Username: {SMTP_USERNAME}")
+        print(f"- Password: {'*' * len(SMTP_PASSWORD) if SMTP_PASSWORD else 'Not Set'}")
+        print(f"- Sender: {SENDER_EMAIL}")
+        
+        missing_config = []
+        if not SMTP_SERVER: missing_config.append('SMTP_SERVER')
+        if not SMTP_PORT: missing_config.append('SMTP_PORT')
+        if not SMTP_USERNAME: missing_config.append('SMTP_USERNAME')
+        if not SMTP_PASSWORD: missing_config.append('SMTP_PASSWORD')
+        if not SENDER_EMAIL: missing_config.append('SENDER_EMAIL')
+        
+        if missing_config:
+            error_msg = f"Missing SMTP configuration: {', '.join(missing_config)}"
+            print(f"Error: {error_msg}")
+            return jsonify({'error': error_msg}), 500
 
         # Create email message
+        print("\nCreating email message...")
         msg = MIMEMultipart()
         msg['From'] = SENDER_EMAIL
         msg['To'] = to_email
@@ -293,48 +338,61 @@ We look forward to your visit!
 Best regards,
 Museum Management Team
 """
+        print("\nEmail Content:")
+        print("- From:", SENDER_EMAIL)
+        print("- To:", to_email)
+        print("- Subject: Museum Booking Confirmation")
+        print("- Body Preview:", body[:100] + "...")
 
         msg.attach(MIMEText(body, 'plain'))
 
-        print("Gateway: Attempting to connect to SMTP server...")  # Debug log
         try:
-            # Print email configuration (without password)
-            print(f"Gateway: SMTP Configuration - Server: {SMTP_SERVER}, Port: {SMTP_PORT}, Username: {SMTP_USERNAME}")
-            
-            # Connect to SMTP server
+            print("\n=== SMTP Connection Started ===")
+            print("1. Creating SMTP connection...")
             server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-            server.set_debuglevel(1)  # Enable SMTP debug output
+            server.set_debuglevel(2)  # Increase debug level
             
-            # Start TLS
-            print("Gateway: Starting TLS connection...")
+            print("\n2. Starting TLS...")
             server.starttls()
             
-            # Login
-            print("Gateway: Attempting login...")
+            print("\n3. Attempting login...")
             server.login(SMTP_USERNAME, SMTP_PASSWORD)
             
-            # Send email
-            print("Gateway: Sending email...")
+            print("\n4. Sending email...")
             server.send_message(msg)
             
-            # Quit server
+            print("\n5. Closing SMTP connection...")
             server.quit()
-            print(f"Gateway: Email sent successfully to {to_email}")
+            
+            print("\nEmail sent successfully!")
+            print("=== Email Request Completed ===\n")
             return jsonify({'message': 'Email sent successfully'}), 200
             
         except smtplib.SMTPAuthenticationError as auth_error:
-            print(f"Gateway: SMTP Authentication failed: {str(auth_error)}")
-            return jsonify({'error': 'Email authentication failed'}), 500
+            error_msg = f"SMTP Authentication failed: {str(auth_error)}"
+            print(f"\nError: {error_msg}")
+            print("Full error details:", auth_error)
+            print(traceback.format_exc())
+            return jsonify({'error': error_msg}), 500
         except smtplib.SMTPException as smtp_error:
-            print(f"Gateway: SMTP error occurred: {str(smtp_error)}")
-            return jsonify({'error': f'SMTP error: {str(smtp_error)}'}), 500
+            error_msg = f"SMTP error: {str(smtp_error)}"
+            print(f"\nError: {error_msg}")
+            print("Full error details:", smtp_error)
+            print(traceback.format_exc())
+            return jsonify({'error': error_msg}), 500
         except Exception as e:
-            print(f"Gateway: Failed to send email: {str(e)}")
-            return jsonify({'error': f'Failed to send email: {str(e)}'}), 500
+            error_msg = f"Failed to send email: {str(e)}"
+            print(f"\nError: {error_msg}")
+            print("Full error details:", e)
+            print(traceback.format_exc())
+            return jsonify({'error': error_msg}), 500
 
     except Exception as e:
-        print(f"Gateway: Email error: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        error_msg = f"Email processing error: {str(e)}"
+        print(f"\nError: {error_msg}")
+        print("Full error details:", e)
+        print(traceback.format_exc())
+        return jsonify({'error': error_msg}), 500
 
 # User session management
 @app.route('/api/users/session', methods=['POST'])
@@ -360,6 +418,43 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
     response.headers.add('Access-Control-Allow-Credentials', 'true')
     return response
+
+# Add this test endpoint
+@app.route('/api/email/test', methods=['GET'])
+def test_email_config():
+    try:
+        print("\n=== Testing Email Configuration ===")
+        print("SMTP Configuration:")
+        print(f"- Server: {SMTP_SERVER}")
+        print(f"- Port: {SMTP_PORT}")
+        print(f"- Username: {SMTP_USERNAME}")
+        print(f"- Password: {'*' * len(SMTP_PASSWORD) if SMTP_PASSWORD else 'Not Set'}")
+        
+        if not all([SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SENDER_EMAIL]):
+            missing = []
+            if not SMTP_SERVER: missing.append('SMTP_SERVER')
+            if not SMTP_PORT: missing.append('SMTP_PORT')
+            if not SMTP_USERNAME: missing.append('SMTP_USERNAME')
+            if not SMTP_PASSWORD: missing.append('SMTP_PASSWORD')
+            if not SENDER_EMAIL: missing.append('SENDER_EMAIL')
+            return jsonify({
+                'status': 'error',
+                'message': f'Missing configuration: {", ".join(missing)}'
+            }), 500
+            
+        return jsonify({
+            'status': 'success',
+            'config': {
+                'server': SMTP_SERVER,
+                'port': SMTP_PORT,
+                'username': SMTP_USERNAME,
+                'sender': SENDER_EMAIL
+            }
+        })
+    except Exception as e:
+        print(f"Error testing email config: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(port=GATEWAY_PORT, debug=True)
