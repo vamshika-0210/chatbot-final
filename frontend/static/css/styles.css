@@ -1,0 +1,52 @@
+/* Calendar tooltip styles */
+.calendar-day {
+    position: relative;
+}
+
+.calendar-day.show-tooltip::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: white;
+    padding: 10px;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    white-space: nowrap;
+    min-width: 200px;
+}
+
+.slots-tooltip {
+    font-size: 14px;
+}
+
+.slots-tooltip h4 {
+    margin: 0 0 8px 0;
+    color: #333;
+}
+
+.slots-tooltip p {
+    margin: 4px 0;
+    color: #666;
+}
+
+/* Add hover effect to calendar days */
+.calendar-day:hover {
+    background-color: #f5f5f5;
+    cursor: pointer;
+}
+
+/* Style for different availability states */
+.slot-available {
+    color: #28a745;
+}
+
+.slot-limited {
+    color: #ffc107;
+}
+
+.slot-full {
+    color: #dc3545;
+}

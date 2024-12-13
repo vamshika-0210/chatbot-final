@@ -1,0 +1,104 @@
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 5px;
+    padding: 10px;
+}
+
+.calendar-header {
+    font-weight: bold;
+    text-align: center;
+    padding: 10px;
+}
+
+/* Replace or add these rules in your calendar.css */
+
+/* Base calendar cell styles */
+.calendar td {
+    padding: 8px;
+    text-align: center;
+    border: 1px solid #dee2e6;
+    height: 80px;
+    width: 80px;
+    vertical-align: top;
+    position: relative;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+/* Hover state */
+.calendar td:hover {
+    background-color: #f8f9fa;
+}
+
+/* Disabled state */
+.calendar td.disabled {
+    background-color: #e9ecef;
+    cursor: not-allowed;
+}
+
+/* Available state */
+.calendar td.available {
+    background-color: #d4edda;
+    border-color: #c3e6cb;
+}
+
+/* Limited state */
+.calendar td.limited {
+    background-color: #fff3cd;  /* Yellow warning background */
+    border-color: #ffeeba;
+}
+
+/* Full state */
+.calendar td.full {
+    background-color: #f8d7da;
+    border-color: #f5c6cb;
+    cursor: not-allowed;
+}
+
+/* Unavailable state */
+.calendar td.unavailable {
+    background-color: #e9ecef;
+    border-color: #dee2e6;
+    cursor: not-allowed;
+}
+
+/* Slot text colors for different states */
+.calendar td.available .slots {
+    color: #28a745;  /* Green */
+}
+
+.calendar td.limited .slots {
+    color: #dccb35;  /* Red */
+}
+
+.calendar td.full .slots {
+    color: #dc3545;  /* Red */
+}
+
+.calendar td.disabled .slots {
+    color: #6c757d;  /* Gray */
+}
+
+.month-selector {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    margin-bottom: 20px;
+}
+
+.month-selector button {
+    padding: 5px 15px;
+    border: 1px solid #007bff;
+    background: none;
+    color: #007bff;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.month-selector button:hover {
+    background-color: #007bff;
+    color: white;
+}
