@@ -223,8 +223,8 @@ def create_booking():
                 ticket_type=data['ticketType'],
                 time_slot=data['timeSlot'],
                 total_amount=float(total_amount),
-                status='pending',
-                payment_status='pending'
+                status='Completed',
+                payment_status='Completed'
             )
             
             db.session.add(booking)
