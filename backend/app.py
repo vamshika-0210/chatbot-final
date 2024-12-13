@@ -16,8 +16,39 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger('werkzeug')
 logger.setLevel(logging.INFO)
 
-# Enable full debug output for Werkzeug
-WSGIRequestHandler.log = lambda self, format, *args: logger.info(format % args)
+# Custom log handler to prevent formatting errors
+class SafeLogHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            print(msg)
+        except Exception:
+            pass
+
+# Create and add the safe log handler
+safe_handler = SafeLogHandler()
+logger.addHandler(safe_handler)
+logger.propagate = False
+
+# Disable Werkzeug's default logging
+import logging
+logging.getLogger('werkzeug').disabled = True
+
+# Custom log method for WSGIRequestHandler
+def safe_log_request(self, format, *args):
+    try:
+        if format == 'info':
+            # Special case for request logging
+            msg, code, size = args
+            print(f'Request: {msg}, Status: {code}, Size: {size}')
+        else:
+            print(format % args if args else format)
+    except Exception:
+        pass
+
+# Patch WSGIRequestHandler
+from werkzeug.serving import WSGIRequestHandler
+WSGIRequestHandler.log = safe_log_request
 
 # Load environment variables
 load_dotenv()
